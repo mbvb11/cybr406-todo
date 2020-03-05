@@ -2,6 +2,8 @@ package com.cybr406.todo;
 
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.MultiValueMap;
@@ -20,6 +22,10 @@ public class TodoRestController {
 
     @Autowired
     InMemoryTodoRepository inMemoryTodoRepository;
+    @Autowired
+    TodoJpaRepository todoJpaRepository;
+    @Autowired
+    TaskJpaRepository taskJpaRepository;
 
     @PostMapping("/todos")
     public ResponseEntity<Todo> createTodo(@Valid @RequestBody Todo todo) {
@@ -27,7 +33,7 @@ public class TodoRestController {
         if (todo.getAuthor().isEmpty() || todo.getDetails().isEmpty()) {
             return new ResponseEntity<>(todo, HttpStatus.BAD_REQUEST);
         } else {
-            return new ResponseEntity<>(inMemoryTodoRepository.create(todo), HttpStatus.CREATED);
+            return new ResponseEntity<>(todoJpaRepository.save(todo), HttpStatus.CREATED);
         }
     }
 
@@ -35,7 +41,7 @@ public class TodoRestController {
     @GetMapping("/todos/{id}")
     public ResponseEntity<Todo> findTo(@PathVariable Long id) {
 
-        Optional<Todo> list = inMemoryTodoRepository.find(id);
+        Optional<Todo> list = todoJpaRepository.findById(id);
 
         if (list.isPresent()) {
             Todo test = list.get();
@@ -47,44 +53,47 @@ public class TodoRestController {
 
 
     @GetMapping("/todos")
-    public ResponseEntity<List> findAll(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "10") int size){
+    public Page<Todo> findAll(Pageable page){
 
-        return new ResponseEntity<>(inMemoryTodoRepository.findAll(page, size), HttpStatus.OK);
+        return (Page<Todo>) todoJpaRepository.findAll(page);
 
     }
 
 
     @PostMapping("/todos/{id}/tasks")
     public ResponseEntity<Todo> addTask(@PathVariable(name = "id") Long todoId, @Valid @RequestBody Task task) {
-
-       return new ResponseEntity<>(inMemoryTodoRepository.addTask(todoId,task), HttpStatus.CREATED);
-
+        return todoJpaRepository.findById(todoId)
+                .map(todo -> {
+                    todo.getTasks().add(task);
+                    task.setTodo(todo);
+                    taskJpaRepository.save(task);
+                    return new ResponseEntity<>(todo, HttpStatus.CREATED);
+                }).orElseGet(() -> new ResponseEntity<>(HttpStatus.NOT_FOUND));
     }
 
 
     @DeleteMapping("/todos/{id}")
     public ResponseEntity delete(@PathVariable Long id) {
 
-        try {
-            inMemoryTodoRepository.delete(id);
-        } catch (NoSuchElementException e) {
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        if (todoJpaRepository.existsById(id)){
+            todoJpaRepository.deleteById(id);
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
 
         }
-        return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+        return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+
     }
 
 
     @DeleteMapping("/tasks/{id}")
     public ResponseEntity deleteTask(@PathVariable Long id) {
 
+        if (taskJpaRepository.existsById(id)){
+            taskJpaRepository.deleteById(id);
+            return new ResponseEntity<>(HttpStatus.NO_CONTENT);
 
-        try {
-            inMemoryTodoRepository.deleteTask(id);
-        } catch (NoSuchElementException e) {
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
-        return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+        return new ResponseEntity<>(HttpStatus.NOT_FOUND);
 
     }
 
